@@ -1,0 +1,15 @@
+name: rtl-regression
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  iverilog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Icarus Verilog
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Run end-to-end regression
+        run: python3 scripts/run_sim.py

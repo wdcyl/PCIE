@@ -1,0 +1,13 @@
+build/
+*.vvp
+*.vcd
+*.fst
+*.jou
+*.log
+*.pb
+*.wdb
+*.str
+*.xpr.user
+.Xil/
+__pycache__/
+.pytest_cache/
