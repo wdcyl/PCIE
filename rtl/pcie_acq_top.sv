@@ -22,6 +22,7 @@ module pcie_acq_top #(
     output logic         m_axis_tx_tlast_o,
     input  logic [15:0]  completer_id_i,
     input  logic [15:0]  requester_id_i,
+    input  logic         dma_enable_i,
     output logic         irq_o,
     output logic [31:0]  status_o,
     output logic [31:0]  captured_count_o,
@@ -36,10 +37,12 @@ module pcie_acq_top #(
     logic [255:0] cpl_tlp_data, dma_tlp_data;
     logic [31:0] cpl_tlp_keep, dma_tlp_keep;
     logic cpl_tlp_valid, cpl_tlp_ready, dma_tlp_valid, dma_tlp_ready;
+    logic dma_arb_ready;
     logic [31:0] ep_rx_tlp_count, ep_tx_tlp_count, ep_error_count;
     logic start_pulse, clear_stats_pulse;
     logic [31:0] sample_count_cfg, pattern_cfg, irq_status, irq_enable, irq_set;
-    logic [31:0] pattern_sync1_adc, pattern_sync2_adc;
+    (* ASYNC_REG = "TRUE" *) logic [31:0] pattern_sync1_adc;
+    (* ASYNC_REG = "TRUE" *) logic [31:0] pattern_sync2_adc;
     logic [63:0] dma_addr_cfg;
     logic [15:0] adc_data, fifo_wr_data, fifo_rd_data;
     logic adc_valid, acq_busy, acq_done, acq_overflow, fifo_wr_en, fifo_full;
@@ -50,12 +53,14 @@ module pcie_acq_top #(
     logic [31:0] dma_packets_sent;
     logic [63:0] dma_bytes_sent;
     logic dma_done_d, acq_overflow_d;
+    logic start_accepted, start_blocked_q;
     logic [31:0] error_count_d;
     logic control_clear;
 
     // CONTROL[2:1] remain reserved until a coordinated two-clock FIFO flush
     // is added. Statistics clear is supported and should be issued idle.
     assign control_clear = clear_stats_pulse;
+    assign start_accepted = start_pulse && dma_enable_i;
 
     pcie_tlp_endpoint u_endpoint (
         .clk_i(pcie_clk_i), .rst_ni(pcie_rst_ni), .clear_stats_i(clear_stats_pulse),
@@ -106,7 +111,7 @@ module pcie_acq_top #(
     );
 
     acquisition_controller u_acquisition (
-        .pcie_clk(pcie_clk_i), .pcie_rst_n(pcie_rst_ni), .start(start_pulse),
+        .pcie_clk(pcie_clk_i), .pcie_rst_n(pcie_rst_ni), .start(start_accepted),
         .clear_status(control_clear), .sample_count_cfg(sample_count_cfg),
         .busy(acq_busy), .done(acq_done), .overflow(acq_overflow),
         .captured_count(captured_count), .dropped_count(dropped_count),
@@ -124,7 +129,7 @@ module pcie_acq_top #(
     );
 
     c2h_dma_engine u_dma (
-        .pcie_clk(pcie_clk_i), .rst(!pcie_rst_ni), .start(start_pulse),
+        .pcie_clk(pcie_clk_i), .rst(!pcie_rst_ni), .start(start_accepted),
         .clear(control_clear), .host_addr(dma_addr_cfg), .sample_count(sample_count_cfg),
         .requester_id(requester_id_i), .fifo_rd_data(fifo_rd_data),
         .fifo_empty(fifo_empty), .fifo_rd_valid(fifo_rd_valid), .fifo_rd_en(fifo_rd_en),
@@ -134,12 +139,19 @@ module pcie_acq_top #(
         .bytes_sent(dma_bytes_sent)
     );
 
+    // Bus Master Enable is sampled again at the DMA/arbiter boundary. If
+    // software clears BME while a transfer is active, a TLP already accepted
+    // by the holding register is completed, but no subsequent MWr is launched.
+    // Re-enabling BME resumes the paused packetizer without corrupting state.
+    assign dma_tlp_ready = dma_arb_ready && dma_enable_i;
+
     tlp_tx_arbiter u_tx_arbiter (
         .clk_i(pcie_clk_i), .rst_ni(pcie_rst_ni),
         .cpl_data_i(cpl_tlp_data), .cpl_keep_i(cpl_tlp_keep),
         .cpl_valid_i(cpl_tlp_valid), .cpl_ready_o(cpl_tlp_ready),
         .dma_data_i(dma_tlp_data), .dma_keep_i(dma_tlp_keep),
-        .dma_valid_i(dma_tlp_valid), .dma_ready_o(dma_tlp_ready),
+        .dma_valid_i(dma_tlp_valid && dma_enable_i),
+        .dma_ready_o(dma_arb_ready),
         .tx_data_o(m_axis_tx_tdata_o), .tx_keep_o(m_axis_tx_tkeep_o),
         .tx_valid_o(m_axis_tx_tvalid_o), .tx_ready_i(m_axis_tx_tready_i),
         .tx_last_o(m_axis_tx_tlast_o)
@@ -150,6 +162,7 @@ module pcie_acq_top #(
             dma_done_d <= 1'b0;
             acq_overflow_d <= 1'b0;
             error_count_d <= 32'd0;
+            start_blocked_q <= 1'b0;
         end else begin
             dma_done_d <= dma_done;
             acq_overflow_d <= acq_overflow;
@@ -160,6 +173,11 @@ module pcie_acq_top #(
                 error_count_d <= 32'd0;
             else
                 error_count_d <= ep_error_count;
+
+            if (clear_stats_pulse)
+                start_blocked_q <= 1'b0;
+            else if (start_pulse && !dma_enable_i)
+                start_blocked_q <= 1'b1;
         end
     end
 
@@ -168,6 +186,7 @@ module pcie_acq_top #(
         irq_set[0] = dma_done & ~dma_done_d;
         irq_set[1] = acq_overflow & ~acq_overflow_d;
         irq_set[2] = (ep_error_count != error_count_d);
+        irq_set[3] = start_pulse && !dma_enable_i;
     end
 
     always_comb begin
@@ -180,6 +199,7 @@ module pcie_acq_top #(
         status_o[5] = fifo_empty;
         status_o[6] = fifo_full;
         status_o[7] = irq_o;
+        status_o[8] = start_blocked_q;
         status_o[23:16] = fifo_rd_level;
     end
 

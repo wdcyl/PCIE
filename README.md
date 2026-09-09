@@ -34,7 +34,7 @@ flowchart LR
     ARB --> HOST
 ```
 
-工程内部使用规范化的 TLP 格式。连接实际器件时，在顶层前增加厂商 PCIe Hard IP适配层，将 Xilinx/Intel接口转换为该内部格式。详细边界和两种上板方案见 [设计说明](docs/DESIGN.md)。
+工程内部使用规范化的 TLP 格式。仓库同时提供 KC705 板级顶层，将 Xilinx 7-Series PCIe Hard IP 的 64-bit AXI4-Stream 接口转换为该内部格式。详细边界见 [设计说明](docs/DESIGN.md)，工程生成和上板步骤见 [KC705 上板说明](docs/KC705_BRINGUP.md)。
 
 ## 快速运行
 
@@ -49,12 +49,23 @@ flowchart LR
 python scripts/run_sim.py
 ```
 
+生成 KC705 Vivado 工程或 bitstream：
+
+```bash
+make vivado-project
+make bitstream
+```
+
+板级目标为 XC7K325T、PCIe Gen2 x4、64-bit/250 MHz、BAR0 4 KiB 和单向量 MSI。本地尚未完成 Vivado 和实板验证，使用前请执行 [KC705 上板检查](docs/KC705_BRINGUP.md)。
+
 成功时输出：
 
 ```text
 === Regression summary ===
-checks=23 errors=0 cpl=6 dma_packets=15 dma_bytes=226
+checks=28 errors=0 cpl=7 dma_packets=17 dma_bytes=250
 ALL TESTS PASSED
+PASS: 174 Xilinx 7-Series bridge/MSI checks
+PASS: all simulations and KC705 top-level elaboration completed
 ```
 
 波形生成在 `build/pcie_acq.vcd`。
@@ -71,13 +82,22 @@ PCIE/
 │   ├── async_fifo.sv           # Gray指针双时钟FIFO
 │   ├── c2h_dma_engine.sv       # MWr64 C2H DMA打包
 │   ├── tlp_tx_arbiter.sv       # Completion/DMA发送仲裁
-│   └── pcie_acq_top.sv         # 顶层集成
+│   ├── xilinx_7x_axis_bridge_64.sv
+│   ├── xilinx_7x_msi_controller.sv
+│   └── pcie_acq_top.sv         # 可移植应用顶层
+├── fpga/kc705/
+│   ├── rtl/kc705_pcie_top.sv   # 单个PCIe IP的板级顶层
+│   ├── constraints/kc705_pcie.xdc
+│   └── tcl/                    # Vivado工程和bitstream脚本
 ├── sim/
-│   └── tb_pcie_acq.sv          # Root Complex与Host Memory行为模型
+│   ├── tb_pcie_acq.sv          # Root Complex与Host Memory行为模型
+│   ├── tb_xilinx_7x_integration.sv
+│   └── pcie_7x_0_stub.sv       # 仅用于CI端口展开，不含协议模型
 ├── scripts/
 │   └── run_sim.py
 ├── docs/
 │   ├── DESIGN.md
+│   ├── KC705_BRINGUP.md
 │   ├── REGISTER_MAP.md
 │   └── VERIFICATION.md
 └── .github/workflows/ci.yml
@@ -85,18 +105,19 @@ PCIE/
 
 ## 当前工程边界
 
-本仓库实现 PCIe事务层学习内核与采集数据通路，不包含特定板卡的GT收发器、LTSSM、Data Link Layer或加密厂商Hard IP网表。当前限制：
+本仓库实现 PCIe事务层学习内核与采集数据通路，并提供生成 KC705 所需加密厂商 Hard IP 的 Tcl；GT收发器、LTSSM、Data Link Layer和配置空间由 Vivado IP生成。当前限制：
 
 - BAR只支持单DW MRd32/MWr32。
 - DMA只实现C2H Posted MWr64，不包含H2C、描述符环和多队列。
 - 内部TLP一次完整放入256-bit单拍，Payload最大4DW。
-- 板级时钟、引脚约束和Hard IP Wrapper需在选定FPGA/开发板后补充。
+- KC705 工程尚未在本地 Vivado 或实板验证；生成 bitstream 后仍需完成时序、DRC、枚举和 DMA 压力测试。
 
 这些边界均在文档中显式说明，便于后续继续扩展，而不会把厂商PHY能力误写成自研RTL能力。
 
 ## 文档
 
 - [详细设计与IP说明](docs/DESIGN.md)
+- [KC705 Vivado工程与上板说明](docs/KC705_BRINGUP.md)
 - [BAR0寄存器表](docs/REGISTER_MAP.md)
 - [验证方案与测试结果](docs/VERIFICATION.md)
 

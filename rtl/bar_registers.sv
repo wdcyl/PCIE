@@ -52,6 +52,7 @@ module bar_registers #(
     localparam logic [11:0] REG_ERROR_COUNT   = 12'h030;
     localparam logic [11:0] REG_BYTE_COUNT_LO = 12'h034;
     localparam logic [11:0] REG_BYTE_COUNT_HI = 12'h038;
+    localparam logic [11:0] REG_IRQ_CLEAR     = 12'h03c;
 
     logic [31:0] sample_count_q;
     logic [31:0] pattern_q;
@@ -92,7 +93,8 @@ module bar_registers #(
             REG_TX_TLP_COUNT,
             REG_ERROR_COUNT,
             REG_BYTE_COUNT_LO,
-            REG_BYTE_COUNT_HI: addr_valid_o = 1'b1;
+            REG_BYTE_COUNT_HI,
+            REG_IRQ_CLEAR:     addr_valid_o = 1'b1;
             default:           addr_valid_o = 1'b0;
         endcase
     end
@@ -116,6 +118,7 @@ module bar_registers #(
                 REG_ERROR_COUNT:   rd_data_o = error_count_i;
                 REG_BYTE_COUNT_LO: rd_data_o = byte_count_i[31:0];
                 REG_BYTE_COUNT_HI: rd_data_o = byte_count_i[63:32];
+                REG_IRQ_CLEAR:     rd_data_o = 32'h0000_0000;
                 default:           rd_data_o = 32'h0000_0000;
             endcase
         end
@@ -123,7 +126,7 @@ module bar_registers #(
 
     always_comb begin
         irq_clear_mask = 32'h0000_0000;
-        if (wr_en_i && (addr_i == REG_IRQ_STATUS)) begin
+        if (wr_en_i && (addr_i == REG_IRQ_CLEAR)) begin
             if (wr_strb_i[0]) irq_clear_mask[7:0]   = wr_data_i[7:0];
             if (wr_strb_i[1]) irq_clear_mask[15:8]  = wr_data_i[15:8];
             if (wr_strb_i[2]) irq_clear_mask[23:16] = wr_data_i[23:16];
@@ -168,7 +171,7 @@ module bar_registers #(
                     REG_IRQ_ENABLE:
                         irq_enable_q <= merge_wstrb(irq_enable_q, wr_data_i, wr_strb_i);
                     default: begin
-                        // Read-only registers and IRQ_STATUS require no action here.
+                        // Read-only registers and IRQ_CLEAR require no action here.
                     end
                 endcase
             end

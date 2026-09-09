@@ -55,7 +55,9 @@
 | `tlp_tx_arbiter` | 自研RTL | Completion优先的双源发送仲裁 |
 | `pcie_acq_top` | 自研RTL | 系统集成与状态/中断汇总 |
 
-当前可移植内核没有实例化厂商黑盒IP。这不是遗漏，而是因为PCIe Hard IP端口、Descriptor格式、时钟复位和约束都依赖具体FPGA系列与板卡。
+可移植内核本身不依赖厂商网表；`fpga/kc705`板级工程则在`kc705_pcie_top`
+中**只例化一次**Vivado生成的`pcie_7x_0`，并通过64-bit AXI4-Stream适配层
+连接这里的Canonical TLP接口。
 
 ### 3.2 接入Xilinx器件时选择的IP
 
@@ -93,7 +95,9 @@ tdata[255:128] = 后续Payload
 
 `tkeep[31:0]`每位对应一个有效字节。`tvalid`有效且`tready`无效时，发送方必须保持`tdata/tkeep/tlast`不变。
 
-实际Hard IP的DWORD排列和Descriptor格式可能不同，因此板级Wrapper必须根据对应Product Guide转换，不能直接按位连接。
+KC705工程采用7-Series PCIe IP的64-bit AXI4-Stream接口：首拍低32位为DW0、
+高32位为DW1，无需额外DWORD或字节交换。`xilinx_7x_axis_bridge_64`负责多拍
+聚合/拆分、`tkeep`检查、BAR0命中过滤和背压保持。
 
 ## 5. M1：BAR与Completion
 
@@ -199,8 +203,12 @@ DW4..DW7: ADC Sample Payload
 - IRQ bit0：DMA完成；
 - IRQ bit1：采集溢出；
 - IRQ bit2：TLP协议或BAR访问错误。
+- IRQ bit3：链路未就绪或Bus Master Enable未置位时软件尝试启动DMA。
 
-IRQ状态是Sticky并采用Write-One-to-Clear；只有`IRQ_STATUS & IRQ_ENABLE`非零时才拉高顶层`irq_o`。
+IRQ状态是Sticky；`IRQ_STATUS`只读，驱动向`IRQ_CLEAR`写1清除对应位。
+只有`IRQ_STATUS & IRQ_ENABLE`非零时才拉高顶层`irq_o`。KC705板级MSI控制器
+会保持`cfg_interrupt`直到IP给出`cfg_interrupt_rdy`，随后等待驱动清除事件后
+才重新武装，因此IP发送确认不会误当成设备事件确认。
 
 ## 8. TX仲裁
 
@@ -222,18 +230,13 @@ Priority 2: DMA MWr64
 
 顶层输入`pcie_rst_ni/adc_rst_ni`均为低有效。除DMA状态机使用PCIe域同步高有效内部复位外，其余时序模块采用异步拉低；板级设计应在各时钟域同步释放复位。PCIe Hard IP的`user_reset`应作为PCIe域复位来源。
 
-## 10. 板级集成步骤
+## 10. KC705板级集成
 
-选定开发板后需要新增：
-
-1. PCIe Hard IP配置，包括Link Width、Generation、BAR0大小和Class Code；
-2. 差分参考时钟、PERST#、GT Lane和ADC引脚约束；
-3. Hard IP接口到Canonical TLP的Wrapper；
-4. MSI/MSI-X请求握手，把`irq_o`接到IP中断接口；
-5. CDC与时序约束，包括异步时钟组和同步器标记；
-6. ILA探针与板级枚举、BAR、DMA压力测试。
-
-在没有确定FPGA型号前不提交虚假的`.xci`、`.xdc`或器件端口封装。
+仓库提供KC705/XC7K325T工程：Gen2 x4、64-bit AXI4-Stream @ 250 MHz、
+4 KiB BAR0、单向量64-bit-capable MSI。PCIe IP处理PHY、Data Link、配置空间、
+流控和MSI报文，自研RTL处理BAR事务、Completion、采集、FIFO和C2H MWr DMA。
+动态BDF用于Completion/DMA Header；DMA只有在`user_lnk_up && cfg_command[2]`
+成立时才能启动。完整生成和实板步骤见`KC705_BRINGUP.md`。
 
 ## 11. 已知限制与扩展方向
 
@@ -242,3 +245,5 @@ Priority 2: DMA MWr64
 - 当前没有Scatter-Gather Descriptor Ring，可增加描述符预取和Completion Queue。
 - 没有多通道、MSI-X向量和性能流控，可进一步增加队列化DMA。
 - 内部单拍TLP适合教学和小Payload，可改为标准多拍Streaming TLP接口。
+- 当前板级工程尚未在本机Vivado和实际KC705上完成综合/时序/链路验证；仓库
+  中的自动测试覆盖可移植RTL、AXI适配和MSI控制逻辑，不能替代实板结果。

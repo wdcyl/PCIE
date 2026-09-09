@@ -1,6 +1,6 @@
 # BAR0寄存器表
 
-BAR0内部地址空间为4 KiB。当前实现使用低`0x000-0x038`。
+BAR0内部地址空间为4 KiB。当前实现使用低`0x000-0x03C`。
 
 | Offset | 名称 | 属性 | Reset | 说明 |
 |---:|---|---|---:|---|
@@ -12,13 +12,14 @@ BAR0内部地址空间为4 KiB。当前实现使用低`0x000-0x038`。
 | `0x014` | PATTERN | RW | 0 | `[1:0]`模式，`[31:16]`常量值 |
 | `0x018` | DMA_ADDR_LO | RW | 0 | 主机目的地址低32位，必须4-byte对齐 |
 | `0x01C` | DMA_ADDR_HI | RW | 0 | 主机目的地址高32位 |
-| `0x020` | IRQ_STATUS | RO/W1C | 0 | 中断状态，写1清除 |
+| `0x020` | IRQ_STATUS | RO | 0 | 粘滞中断状态 |
 | `0x024` | IRQ_ENABLE | RW | 0 | 中断使能 |
 | `0x028` | RX_TLP_COUNT | RO | 0 | 接收TLP数量 |
 | `0x02C` | TX_TLP_COUNT | RO | 0 | Clear Stats以来Completion加DMA TLP数量 |
 | `0x030` | ERROR_COUNT | RO | 0 | Clear Stats以来Endpoint错误加Dropped Count |
 | `0x034` | BYTE_COUNT_LO | RO | 0 | Clear Stats以来DMA有效字节数低32位 |
 | `0x038` | BYTE_COUNT_HI | RO | 0 | Clear Stats以来DMA有效字节数高32位 |
+| `0x03C` | IRQ_CLEAR | WO/W1C | 0 | 写1清除IRQ_STATUS对应位 |
 
 ## CONTROL
 
@@ -43,15 +44,20 @@ CONTROL命令只持续一个`pcie_clk`周期，不保存写入值。
 | 5 | FIFO Empty |
 | 6 | FIFO Full |
 | 7 | IRQ Asserted |
+| 8 | Start Blocked：链路未就绪或Bus Master Enable未置位时收到START |
 | `[23:16]` | PCIe侧FIFO Level的低8位 |
 
-## IRQ_STATUS / IRQ_ENABLE
+## IRQ_STATUS / IRQ_ENABLE / IRQ_CLEAR
 
 | Bit | 事件 |
 |---:|---|
 | 0 | DMA完成 |
 | 1 | 采集FIFO溢出 |
 | 2 | TLP格式错误或未定义BAR访问 |
+| 3 | DMA启动被拒绝（PCIe链路未就绪或Bus Master Enable=0） |
+
+`IRQ_STATUS`只读。驱动处理事件后必须向`IRQ_CLEAR`写入对应位；PCIe IP的
+`cfg_interrupt_rdy`只确认MSI消息已被发送，不等价于设备事件已被软件处理。
 
 ## 软件启动顺序
 
@@ -64,7 +70,7 @@ CONTROL命令只持续一个`pcie_clk`周期，不保存写入值。
 6. CONTROL.START = 1
 7. 轮询 STATUS.DMA_DONE 或等待中断
 8. 读取 BYTE_COUNT / ERROR_COUNT
-9. 向 IRQ_STATUS 对应位写1清中断
+9. 向 IRQ_CLEAR 对应位写1，清除 IRQ_STATUS
 ```
 
 `DMA_ADDR`必须4-byte对齐；当前版本不会自动修正软件传入的未对齐语义。`PATTERN`和`SAMPLE_COUNT`在Start前至少稳定两个ADC时钟，并在本次采集期间保持不变。

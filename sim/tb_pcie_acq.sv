@@ -24,6 +24,7 @@ module tb_pcie_acq;
     wire [31:0] tx_keep;
     wire tx_valid;
     reg tx_ready;
+    reg dma_enable;
     wire tx_last;
     wire irq;
     wire [31:0] status;
@@ -55,7 +56,8 @@ module tb_pcie_acq;
         .m_axis_tx_tdata_o(tx_data), .m_axis_tx_tkeep_o(tx_keep),
         .m_axis_tx_tvalid_o(tx_valid), .m_axis_tx_tready_i(tx_ready),
         .m_axis_tx_tlast_o(tx_last), .completer_id_i(EP_ID),
-        .requester_id_i(EP_ID), .irq_o(irq), .status_o(status),
+        .requester_id_i(EP_ID), .dma_enable_i(dma_enable),
+        .irq_o(irq), .status_o(status),
         .captured_count_o(captured_count), .dropped_count_o(dropped_count)
     );
 
@@ -241,8 +243,11 @@ module tb_pcie_acq;
             region_ok = 1'b1;
             for (index = 0; index < sample_total; index = index + 1) begin
                 actual = memory_sample(byte_offset + index*2);
-                if (actual !== (first_value + index))
+                if (actual !== (first_value + index)) begin
                     region_ok = 1'b0;
+                    $display("       ramp mismatch index=%0d expected=%04x actual=%04x",
+                             index, first_value + index, actual);
+                end
             end
             if (region_ok)
                 pass(name);
@@ -351,6 +356,7 @@ module tb_pcie_acq;
         rx_last = 0;
         rx_bar0_hit = 0;
         tx_ready = 0;
+        dma_enable = 1'b1;
         stalled_prev = 0;
         for (index = 0; index < HOST_MEM_SIZE; index = index + 1)
             host_mem[index] = 8'h00;
@@ -388,12 +394,27 @@ module tb_pcie_acq;
             fail("Unsupported MWr64 remains Posted without Completion");
 
         send_mwr32(12'h024, 32'h0000_0004, 4'hf);
-        send_mwr32(12'h020, 32'hffff_ffff, 4'hf);
+        send_mwr32(12'h03c, 32'hffff_ffff, 4'hf);
         send_mwr32(12'h008, 32'h0000_0008, 4'hf);
         repeat (8) @(posedge pcie_clk);
         bar_read(12'h020, 8'h14, read_value, read_packet);
         check32("Clear Stats does not retrigger protocol-error IRQ",
                 read_value, 32'd0);
+
+        $display("\n=== PCIe command gating ===");
+        send_mwr32(12'h024, 32'h0000_0008, 4'hf);
+        dma_enable = 1'b0;
+        send_mwr32(12'h008, 32'h0000_0001, 4'hf);
+        repeat (8) @(posedge pcie_clk);
+        bar_read(12'h020, 8'h15, read_value, read_packet);
+        if (read_value[3] && irq && status[8] && !status[0] && !status[3])
+            pass("START is rejected until PCIe Bus Master Enable/link gate opens");
+        else
+            fail("START is rejected until PCIe Bus Master Enable/link gate opens");
+        send_mwr32(12'h03c, 32'h0000_0008, 4'hf);
+        send_mwr32(12'h008, 32'h0000_0008, 4'hf);
+        dma_enable = 1'b1;
+        repeat (8) @(posedge pcie_clk);
 
         $display("\n=== M2/M3: acquisition, FIFO and C2H DMA ===");
         send_mwr32(12'h008, 32'h0000_0008, 4'hf);
@@ -433,12 +454,12 @@ module tb_pcie_acq;
         else
             fail("DMA completion sets enabled interrupt");
         // Clear both DMA-done and the earlier deliberate UR/error event.
-        send_mwr32(12'h020, 32'hffff_ffff, 4'hf);
+        send_mwr32(12'h03c, 32'hffff_ffff, 4'hf);
         repeat (3) @(posedge pcie_clk);
         if (!irq)
-            pass("IRQ_STATUS is write-one-to-clear");
+            pass("IRQ_CLEAR write-one-to-clear clears IRQ_STATUS");
         else
-            fail("IRQ_STATUS is write-one-to-clear");
+            fail("IRQ_CLEAR write-one-to-clear clears IRQ_STATUS");
 
         $display("\n=== M3: 4 KiB split and backpressure stability ===");
         send_mwr32(12'h008, 32'h0000_0008, 4'hf);
@@ -462,6 +483,39 @@ module tb_pcie_acq;
         else
             fail("4 KiB boundary transfer preserves byte count");
         check_ramp_region(16'h0ff8, 12, "Boundary-split DMA data remains ordered");
+
+        $display("\n=== PCIe Bus Master Enable pause/resume ===");
+        send_mwr32(12'h008, 32'h0000_0008, 4'hf);
+        send_mwr32(12'h010, 32'd12, 4'hf);
+        send_mwr32(12'h018, HOST_MEM_BASE[31:0] + 32'h3000, 4'hf);
+        send_mwr32(12'h01c, HOST_MEM_BASE[63:32], 4'hf);
+        repeat (8) @(posedge adc_clk);
+        packets_before = dma_packet_count;
+        ready_mode = 2;
+        send_mwr32(12'h008, 32'h0000_0001, 4'hf);
+        repeat (100) @(posedge pcie_clk);
+        dma_enable = 1'b0;
+        ready_mode = 0;
+        index = 0;
+        while ((dma_packet_count == packets_before) && (index < 1000)) begin
+            @(posedge pcie_clk);
+            index = index + 1;
+        end
+        if ((dma_packet_count - packets_before) == 1)
+            pass("TLP accepted before BME clear is allowed to complete");
+        else
+            fail("TLP accepted before BME clear is allowed to complete");
+        packets_before = dma_packet_count;
+        repeat (200) @(posedge pcie_clk);
+        if ((dma_packet_count == packets_before) && status[3])
+            pass("No new DMA MWr is launched while BME is clear");
+        else
+            fail("No new DMA MWr is launched while BME is clear");
+        dma_enable = 1'b1;
+        wait_dma_done(20000);
+        repeat (4) @(posedge pcie_clk);
+        check_ramp_region(16'h3000, 12,
+                          "DMA resumes without data loss after BME returns");
 
         $display("\n=== Exception: overflow and recovery ===");
         send_mwr32(12'h008, 32'h0000_0008, 4'hf);

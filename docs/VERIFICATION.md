@@ -12,7 +12,8 @@
 
 ## 自动检查
 
-当前回归包含23项检查：
+端到端采集回归包含28项检查，并另有7-Series AXI适配/MSI专项回归与KC705
+顶层compile-only elaboration：
 
 - DEVICE_ID经MRd/CplD读取；
 - CplD Requester ID与Tag回传；
@@ -27,7 +28,10 @@
 - Host Memory中的Ramp数据连续；
 - DMA Byte Count；
 - DMA完成中断；
-- IRQ W1C；
+- IRQ_CLEAR W1C；
+- Bus Master Enable/链路门控拒绝非法START；
+- BME在DMA中途清除时只完成已被发送保持寄存器接受的TLP，暂停后续MWr；
+- BME恢复后DMA继续且数据不丢失；
 - 随机发送背压；
 - 背压期间TLP稳定；
 - 4 KiB边界自动拆包；
@@ -46,12 +50,14 @@ Icarus Verilog命令：
 python scripts/run_sim.py
 ```
 
-基线结果：
+基线结果以当前CI日志为准；主回归预期包含：
 
 ```text
 === Regression summary ===
-checks=23 errors=0 cpl=6 dma_packets=15 dma_bytes=226
+checks=28 errors=0 cpl=7 dma_packets=17 dma_bytes=250
 ALL TESTS PASSED
+PASS: 174 Xilinx 7-Series bridge/MSI checks
+PASS: all simulations and KC705 top-level elaboration completed
 ```
 
 GitHub Actions在每次Push和Pull Request时运行同一脚本，防止本地和CI使用不同测试入口。
@@ -68,13 +74,13 @@ GitHub Actions在每次Push和Pull Request时运行同一脚本，防止本地�
 
 ## 板级验证清单
 
-选择板卡后需要另外完成：
+真实KC705仍需另外完成：
 
 - LTSSM进入L0；
 - 协商速率与Lane Width符合配置；
 - `lspci -vv`能读取Vendor/Device ID和BAR；
 - BAR寄存器读写；
-- MSI/MSI-X；
+- 单向量MSI；
 - 长时间DMA数据一致性；
 - 不同Payload和背压条件下的吞吐率；
 - ILA捕获异常时的TLP/FIFO状态。
