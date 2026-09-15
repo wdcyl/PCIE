@@ -1,0 +1,17 @@
+name: ax7203-rtl
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  core-simulation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Icarus Verilog
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Run AX7203 application-core simulation
+        run: python3 projects/ax7203_dds_xadc/scripts/run_simulation.py
+      - name: Compile Linux host utility
+        run: make -C projects/ax7203_dds_xadc/software

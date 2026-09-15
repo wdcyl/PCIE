@@ -1,0 +1,7 @@
+build/
+*.jou
+*.log
+*.str
+*.wdb
+*.vcd
+software/pcie_capture

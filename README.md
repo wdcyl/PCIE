@@ -124,3 +124,7 @@ PCIE/
 ## License
 
 MIT
+
+## AX7203 XADC + XDMA 扩展工程
+
+新增的板级采集方案位于 [projects/ax7203_dds_xadc](projects/ax7203_dds_xadc/README.md)：面向 ALINX AX7203，采用板载 XADC、AD9833 测试信号源和 Xilinx XDMA，实现真实采样 C2H 与内部压力测试两条数据路径。
