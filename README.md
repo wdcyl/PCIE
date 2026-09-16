@@ -128,3 +128,9 @@ MIT
 ## AX7203 XADC + XDMA 扩展工程
 
 新增的板级采集方案位于 [projects/ax7203_dds_xadc](projects/ax7203_dds_xadc/README.md)：面向 ALINX AX7203，采用板载 XADC、AD9833 测试信号源和 Xilinx XDMA，实现真实采样 C2H 与内部压力测试两条数据路径。
+
+## AX7103 + AN9238 + XDMA扩展工程
+
+[projects/ax7103_an9238_ddr3](projects/ax7103_an9238_ddr3/README.md)面向ALINX AX7103和AN9238采集模块，采用MIG管理板载存储、XDMA AXI Memory Mapped通路完成C2H读取。工程包含AN9238采集、AXI突发写、内部Ramp校验源、Vivado自动建图脚本、Linux采集程序以及逐文件设计文档。
+
+当前已完成可移植RTL展开与核心仿真；Vivado综合、bitstream和实板性能数据仍需在目标环境完成。

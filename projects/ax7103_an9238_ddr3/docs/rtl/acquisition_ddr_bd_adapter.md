@@ -1,0 +1,3 @@
+# acquisition_ddr_bd_adapter.sv
+
+只负责Vivado接口封装。`X_INTERFACE_INFO`把离散端口组合成AXI4主接口和AXI-Lite从接口，使Tcl脚本能够直接连接互连与时钟转换器。业务逻辑在`acquisition_ddr_core`，AXI读通道未使用并固定为空闲。

@@ -13,3 +13,5 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y iverilog
       - name: Run end-to-end regression
         run: python3 scripts/run_sim.py
+      - name: Run AX7103 acquisition RTL regression
+        run: python3 projects/ax7103_an9238_ddr3/scripts/run_simulation.py
