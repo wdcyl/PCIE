@@ -66,7 +66,7 @@ docs/                  设计、寄存器、接线与验证说明
    sudo software/pcie_capture --mode xadc --bytes 1048576 --freq 10000 --out xadc.bin
    ```
 
-详细信息见 [设计说明](docs/DESIGN.md)、[硬件接线与上板](docs/HARDWARE_BRINGUP.md) 和 [验证计划](docs/VERIFICATION.md)。
+详细信息见 [逐文件RTL说明](docs/rtl/README.md)、[设计说明](docs/DESIGN.md)、[硬件接线与上板](docs/HARDWARE_BRINGUP.md) 和 [验证计划](docs/VERIFICATION.md)。
 
 ## 复用来源
 
