@@ -7,6 +7,7 @@ set_property target_language Verilog [current_project]
 set_property simulator_language Mixed [current_project]
 
 set rtl_files [list \
+    [file join $project_root rtl ad9833_controller.sv] \
     [file join $project_root rtl async_fifo.sv] \
     [file join $project_root rtl an9238_capture.sv] \
     [file join $project_root rtl fifo_stream_adapter.sv] \
@@ -84,6 +85,9 @@ set adc_ch0 [create_bd_port -dir I -from 11 -to 0 adc_ch0]
 set adc_ch1 [create_bd_port -dir I -from 11 -to 0 adc_ch1]
 set adc_clk_ch0 [create_bd_port -dir O -type clk adc_clk_ch0]
 set adc_clk_ch1 [create_bd_port -dir O -type clk adc_clk_ch1]
+set dds_sclk [create_bd_port -dir O dds_sclk]
+set dds_fsync_n [create_bd_port -dir O dds_fsync_n]
+set dds_sdata [create_bd_port -dir O dds_sdata]
 
 # Clock and reset tree.
 connect_bd_net [get_bd_pins $pcie_buf/IBUF_OUT] [get_bd_pins $xdma/sys_clk_gt]
@@ -108,6 +112,9 @@ connect_bd_net [get_bd_pins $adc_clk/clk_out1] [get_bd_pins $acq/adc_clk] $adc_c
 connect_bd_net [get_bd_pins $rst/peripheral_aresetn] [get_bd_pins $acq/adc_resetn]
 connect_bd_net $adc_ch0 [get_bd_pins $acq/adc_ch0]
 connect_bd_net $adc_ch1 [get_bd_pins $acq/adc_ch1]
+connect_bd_net $dds_sclk [get_bd_pins $acq/dds_sclk]
+connect_bd_net $dds_fsync_n [get_bd_pins $acq/dds_fsync_n]
+connect_bd_net $dds_sdata [get_bd_pins $acq/dds_sdata]
 
 # PCIe DMA reads/writes the memory map; acquisition is a second AXI master.
 connect_bd_intf_net [get_bd_intf_pins $xdma/M_AXI] [get_bd_intf_pins $mem_cdc/S_AXI]

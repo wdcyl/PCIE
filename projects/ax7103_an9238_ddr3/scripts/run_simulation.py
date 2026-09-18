@@ -12,6 +12,7 @@ if not iverilog or not vvp:
     raise SystemExit("Icarus Verilog is required (iverilog and vvp on PATH)")
 
 rtl = [
+    root / "rtl" / "ad9833_controller.sv",
     root / "rtl" / "async_fifo.sv",
     root / "rtl" / "an9238_capture.sv",
     root / "rtl" / "fifo_stream_adapter.sv",
@@ -25,7 +26,13 @@ elab = build / "full_elab.vvp"
 subprocess.run([iverilog, "-g2012", "-Wall", "-s", "acquisition_ddr_bd_adapter", "-o", str(elab), *map(str, rtl)], check=True)
 
 image = build / "tb_rtl.vvp"
-tb_sources = [root / "rtl" / "an9238_capture.sv", root / "rtl" / "axi_burst_writer.sv", root / "sim" / "tb_rtl.sv"]
+tb_sources = [root / "rtl" / "ad9833_controller.sv", root / "rtl" / "an9238_capture.sv", root / "rtl" / "axi_burst_writer.sv", root / "sim" / "tb_rtl.sv"]
 subprocess.run([iverilog, "-g2012", "-Wall", "-s", "tb_rtl", "-o", str(image), *map(str, tb_sources)], check=True)
 result = subprocess.run([vvp, str(image)], text=True)
-sys.exit(result.returncode)
+if result.returncode:
+    sys.exit(result.returncode)
+
+dds_image = build / "tb_ad9833.vvp"
+subprocess.run([iverilog, "-g2012", "-Wall", "-s", "tb_ad9833", "-o", str(dds_image),
+                str(root / "rtl" / "ad9833_controller.sv"), str(root / "sim" / "tb_ad9833.sv")], check=True)
+sys.exit(subprocess.run([vvp, str(dds_image)], text=True).returncode)

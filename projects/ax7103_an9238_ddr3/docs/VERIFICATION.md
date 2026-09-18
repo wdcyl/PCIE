@@ -8,7 +8,8 @@
 - 80字节写入从`0xFF0`开始时，自动拆成1拍和4拍两个突发；
 - AN9238模型采集8组数据，生成2个128-bit缓存字；
 - 非16字节对齐长度被拒绝；
-- 仿真输出：`PASS: burst split, capture packing and argument checks`。
+- 仿真输出：PASS: burst split, capture packing and argument checks；
+- AD9833控制器完成5帧、共80个SCLK下降沿发送，输出：PASS: AD9833 five-word SPI sequence。
 
 Icarus关于`always_comb`常量选择的提示是模拟器能力提示，不是编译失败。
 

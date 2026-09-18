@@ -3,6 +3,7 @@
 module acquisition_ddr_core #(parameter integer FIFO_DEPTH=1024) (
     input wire ctrl_clk_i,input wire ctrl_rst_ni,input wire link_up_i,input wire calib_done_i,
     input wire adc_clk_i,input wire adc_rst_ni,input wire [11:0] adc_ch0_i,input wire [11:0] adc_ch1_i,
+    output wire dds_sclk_o,output wire dds_fsync_no,output wire dds_sdata_o,
     input wire [31:0] s_axil_awaddr_i,input wire s_axil_awvalid_i,output wire s_axil_awready_o,
     input wire [31:0] s_axil_wdata_i,input wire [3:0] s_axil_wstrb_i,input wire s_axil_wvalid_i,output wire s_axil_wready_o,
     output wire [1:0] s_axil_bresp_o,output wire s_axil_bvalid_o,input wire s_axil_bready_i,
@@ -18,6 +19,7 @@ module acquisition_ddr_core #(parameter integer FIFO_DEPTH=1024) (
     output wire [3:0] debug_o
 );
     wire start_pulse,clear_pulse; wire [31:0] capture_bytes,buffer_base,mode,test_seed;
+    wire dds_apply_pulse,dds_busy,dds_done; wire [27:0] dds_ftw; wire dds_triangle;
     wire capture_busy,capture_done,capture_overflow; wire [31:0] captured_pairs;
     wire fifo_wr_en,fifo_full,fifo_valid,fifo_empty,fifo_rd_en;
     wire [127:0] fifo_wr_data,fifo_rd_data,fifo_stream_data,test_data,source_data;
@@ -26,9 +28,9 @@ module acquisition_ddr_core #(parameter integer FIFO_DEPTH=1024) (
     wire writer_ready,writer_done,writer_error,test_busy;
     wire select_test=mode[0];
     wire start_accepted=start_pulse&&link_up_i&&calib_done_i&&writer_ready;
-    logic done_sticky_q,buffer_ready_q; logic [63:0] bytes_written_q;
+    logic done_sticky_q,buffer_ready_q,dds_done_sticky_q; logic [63:0] bytes_written_q;
     wire write_resp_error=m_axi_bvalid_i&&m_axi_bready_o&&(m_axi_bresp_i!=2'b00);
-    wire [31:0] status={22'd0,select_test,buffer_ready_q,writer_error,capture_overflow,
+    wire [31:0] status={21'd0,dds_done_sticky_q,dds_busy,select_test,buffer_ready_q,writer_error,capture_overflow,
         done_sticky_q,writer_ready,capture_busy,calib_done_i,link_up_i};
 
     axil_acquisition_regs u_regs(
@@ -40,7 +42,13 @@ module acquisition_ddr_core #(parameter integer FIFO_DEPTH=1024) (
         .s_axil_rresp_o(s_axil_rresp_o),.s_axil_rvalid_o(s_axil_rvalid_o),.s_axil_rready_i(s_axil_rready_i),
         .status_i(status),.captured_pairs_i(select_test?bytes_written_q[33:2]:captured_pairs),.bytes_written_i(bytes_written_q),
         .start_pulse_o(start_pulse),.clear_pulse_o(clear_pulse),.capture_bytes_o(capture_bytes),
-        .buffer_base_o(buffer_base),.mode_o(mode),.test_seed_o(test_seed));
+        .buffer_base_o(buffer_base),.mode_o(mode),.test_seed_o(test_seed),.dds_apply_pulse_o(dds_apply_pulse),
+        .dds_ftw_o(dds_ftw),.dds_triangle_o(dds_triangle));
+
+    ad9833_controller #(.CLK_DIV(16)) u_dds(
+        .clk_i(ctrl_clk_i),.rst_ni(ctrl_rst_ni),.apply_i(dds_apply_pulse),.ftw_i(dds_ftw),
+        .triangle_i(dds_triangle),.busy_o(dds_busy),.done_pulse_o(dds_done),
+        .sclk_o(dds_sclk_o),.fsync_no(dds_fsync_no),.sdata_o(dds_sdata_o));
 
     an9238_capture u_capture(
         .ctrl_clk_i(ctrl_clk_i),.ctrl_rst_ni(ctrl_rst_ni),.start_i(start_accepted&&!select_test),.clear_i(clear_pulse),
@@ -79,9 +87,15 @@ module acquisition_ddr_core #(parameter integer FIFO_DEPTH=1024) (
         .m_axi_bresp_i(m_axi_bresp_i),.m_axi_bvalid_i(m_axi_bvalid_i),.m_axi_bready_o(m_axi_bready_o));
 
     always_ff @(posedge ctrl_clk_i or negedge ctrl_rst_ni) begin
-        if(!ctrl_rst_ni)begin done_sticky_q<=0;buffer_ready_q<=0;bytes_written_q<=0;end
-        else if(clear_pulse||start_accepted)begin done_sticky_q<=0;buffer_ready_q<=0;bytes_written_q<=0;end
+        if(!ctrl_rst_ni)begin done_sticky_q<=0;buffer_ready_q<=0;bytes_written_q<=0;dds_done_sticky_q<=0;end
+        else if(clear_pulse||start_accepted)begin
+            done_sticky_q<=0;buffer_ready_q<=0;bytes_written_q<=0;
+            if(clear_pulse)dds_done_sticky_q<=0;
+            if(dds_done)dds_done_sticky_q<=1;
+        end
         else begin
+            if(dds_apply_pulse)dds_done_sticky_q<=0;
+            if(dds_done)dds_done_sticky_q<=1;
             if(m_axi_wvalid_o&&m_axi_wready_i)bytes_written_q<=bytes_written_q+16;
             if(writer_done)begin done_sticky_q<=1;buffer_ready_q<=!writer_error&&!write_resp_error&&!capture_overflow;end
         end

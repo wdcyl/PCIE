@@ -53,3 +53,11 @@ set_property PACKAGE_PIN AA19 [get_ports {adc_ch1[10]}]
 set_property PACKAGE_PIN AA18 [get_ports {adc_ch1[11]}]
 set_property IOSTANDARD LVCMOS33 [get_ports {adc_ch0[*] adc_ch1[*]}]
 set_property IOB TRUE [get_ports {adc_ch0[*] adc_ch1[*]}]
+
+# AD9833 module on the spare J11 expansion header.
+set_property PACKAGE_PIN P16 [get_ports dds_sclk]
+set_property PACKAGE_PIN R17 [get_ports dds_fsync_n]
+set_property PACKAGE_PIN R16 [get_ports dds_sdata]
+set_property IOSTANDARD LVCMOS33 [get_ports {dds_sclk dds_fsync_n dds_sdata}]
+set_property DRIVE 8 [get_ports {dds_sclk dds_fsync_n dds_sdata}]
+set_property SLEW SLOW [get_ports {dds_sclk dds_fsync_n dds_sdata}]

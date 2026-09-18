@@ -19,3 +19,8 @@ vivado -mode batch -source fpga/tcl/create_project.tcl
 5. `validate_bd_design`、综合DRC和时序报告无Critical Warning。
 
 `ax7103_mig.prj`来自AX7103官方PCIe/DDR3案例。若实物板卡版本、存储颗粒或速度等级不同，应在MIG GUI中按对应原理图重新生成，不能盲目沿用。
+
+
+## 新增板级端口
+
+Block Design同时导出`dds_sclk`、`dds_fsync_n`和`dds_sdata`，约束到AX7103 J11的P16、R17、R16。AN9238继续使用J13以及`adc_clk_ch0/1`、`adc_ch0/1`端口。生成bitstream前应结合具体板卡版本原理图复核管脚。

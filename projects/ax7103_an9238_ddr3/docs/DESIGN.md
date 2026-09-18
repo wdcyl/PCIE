@@ -6,6 +6,11 @@ AN9238的两个12-bit CMOS输出在65 MHz采样时钟域进入`an9238_capture`�
 
 采集完成后，状态寄存器置位`BUFFER_READY`。Linux程序使用XDMA C2H设备对同一AXI地址执行`pread`，XDMA发起AXI读请求，经互连和MIG读出采样数据，再通过PCIe搬入主机内存。
 
+
+## 信号源与采集前端
+
+PC可通过新增DDS寄存器写入28-bit频率调谐字并触发`ad9833_controller`。控制器从AX7103的J11输出SCLK、FSYNC和SDATA；AD9833模拟输出接入AN9238的SMA输入。AN9238仍经J13向FPGA提供两路12-bit并行采样数据，因此加入信号源不会改变后端FIFO、DDR3或XDMA数据通路。
+
 ## 控制通路
 
 PC对`/dev/xdma0_user`映射的BAR窗口读写。XDMA把访问转换成AXI-Lite，经过时钟转换后进入`axil_acquisition_regs`。软件依次写采集长度、缓存基地址、模式与种子，最后写`CONTROL.START`。
